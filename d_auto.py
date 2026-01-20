@@ -88,24 +88,30 @@ class CalyxReportDownloader:
     def setup_chrome_driver(self, headless: bool = True) -> webdriver.Chrome:
         """Set up Chrome driver for Docker/Cloud environments."""
         chrome_options = Options()
-        
-        # Essential flags for running in a Docker/Cloud environment like Render
         chrome_options.add_argument("--headless=new")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--window-size=1920,1080")
         
         prefs = {
             "download.default_directory": self.config.download_dir,
             "download.prompt_for_download": False,
-            "plugins.always_open_pdf_externally": True
+            "download.directory_upgrade": True,
+            "plugins.always_open_pdf_externally": True  # Important for PDF links
         }
         chrome_options.add_experimental_option("prefs", prefs)
         
-        return webdriver.Chrome(
+        driver = webdriver.Chrome(
             service=Service(ChromeDriverManager().install()),
             options=chrome_options
         )
+        
+        # CRITICAL for Headless Chrome: Enable downloads
+        driver.execute_cdp_cmd("Page.setDownloadBehavior", {
+            "behavior": "allow",
+            "downloadPath": self.config.download_dir
+        })
+        
+        return driver
     
     def download_report(self, report_date: Optional[str] = None, headless: bool = True) -> bool:
         """Download Calyx report for the specified date."""
@@ -225,10 +231,14 @@ class CalyxReportDownloader:
         ok_btn = wait.until(EC.element_to_be_clickable((By.ID, "ok")))
         driver.execute_script("arguments[0].click();", ok_btn)
         
-        # Simple wait for download to complete
-        self.logger.info("⏳ Waiting 20 seconds for download to complete...")
-        time.sleep(20)
-        self.logger.info("✅ Download wait completed")
+        self.logger.info("⏳ Monitoring download directory for new file...")
+        # Wait for a file to appear that isn't a partial download
+        for _ in range(30):  # 60 seconds max
+            files = os.listdir(self.config.download_dir)
+            if any(f.endswith('.pdf') for f in files) and not any(f.endswith('.crdownload') for f in files):
+                self.logger.info("✅ Download detected in directory.")
+                return
+            time.sleep(2)
     
     def _logout_and_cleanup(self, driver: webdriver.Chrome, wait: WebDriverWait):
         """Logout and cleanup driver."""
@@ -833,37 +843,35 @@ class FinancialDataAutomation:
             return False
     
     def _find_any_pdf_in_folder(self) -> Optional[str]:
-        """Find any PDF file in the folio folder."""
+        """Find any PDF file in the folio folder with a retry mechanism."""
         try:
-            self.logger.info(f"🔍 Looking for any PDF in: {self.config.download_dir}")
+            timeout = 60  # Wait up to 60 seconds for the file to appear
+            start_time = time.time()
             
-            if not os.path.exists(self.config.download_dir):
-                self.logger.error(f"Folio folder doesn't exist: {self.config.download_dir}")
-                return None
-            
-            # Get all PDF files
-            all_files = os.listdir(self.config.download_dir)
-            pdf_files = [f for f in all_files if f.lower().endswith('.pdf')]
-            
-            self.logger.info(f"📄 Found {len(pdf_files)} PDF files: {pdf_files}")
-            
-            if not pdf_files:
-                self.logger.error("❌ No PDF files found in folio folder")
-                return None
-            
-            # Use the first PDF file found
-            selected_pdf = pdf_files[0]
-            pdf_path = os.path.join(self.config.download_dir, selected_pdf)
-            
-            # Verify file exists and has content
-            if os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 0:
-                self.logger.info(f"✅ Using PDF file: {selected_pdf}")
-                self.logger.info(f"📊 File size: {os.path.getsize(pdf_path)} bytes")
-                return pdf_path
-            else:
-                self.logger.error(f"❌ PDF file is empty or doesn't exist: {selected_pdf}")
-                return None
+            while time.time() - start_time < timeout:
+                all_files = os.listdir(self.config.download_dir)
                 
+                # Check if Chrome is still downloading (look for .crdownload or .tmp)
+                if any(f.endswith('.crdownload') for f in all_files):
+                    self.logger.info("⏳ Download still in progress (.crdownload found)...")
+                    time.sleep(2)
+                    continue
+                
+                pdf_files = [f for f in all_files if f.lower().endswith('.pdf')]
+                
+                if pdf_files:
+                    selected_pdf = pdf_files[0]
+                    pdf_path = os.path.join(self.config.download_dir, selected_pdf)
+                    
+                    if os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 0:
+                        self.logger.info(f"✅ Found PDF: {selected_pdf}")
+                        return pdf_path
+                
+                time.sleep(2)
+            
+            self.logger.error("❌ Timeout: No PDF files found after waiting.")
+            return None
+            
         except Exception as e:
             self.logger.error(f"❌ Error finding PDF file: {e}")
             return None
