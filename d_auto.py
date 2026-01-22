@@ -45,7 +45,6 @@ class Config:
         
         # Use a temporary directory for downloads instead of a hardcoded Windows path
         self.download_dir = tempfile.mkdtemp()
-        s
         self.calyx_username = os.getenv("CALYX_USERNAME")
         self.calyx_password = os.getenv("CALYX_PASSWORD")
         
