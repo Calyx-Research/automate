@@ -228,6 +228,11 @@ class CalyxReportDownloader:
         select.select_by_value("pdf")
         
         self.logger.info(f"💾 Starting download to: {self.config.download_dir}")
+        
+        # ADD THIS: Wait a moment for the dropdown change to process
+        time.sleep(1)
+        
+        # Re-locate the OK button to ensure it's fresh
         ok_btn = wait.until(EC.element_to_be_clickable((By.ID, "ok")))
         driver.execute_script("arguments[0].click();", ok_btn)
         
