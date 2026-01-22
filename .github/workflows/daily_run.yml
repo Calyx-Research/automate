@@ -1,28 +1,22 @@
 name: Financial Data Automation
-
 on:
   schedule:
-    # 15:00 UTC is 4:00 PM in Nigeria (WAT)
-    - cron: '0 14 * * *'
+    # 13:30 UTC is 2:30 PM in Nigeria (WAT)
+    - cron: '30 13 * * *'
   workflow_dispatch: # Allows you to run it manually for testing
-
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-
       - name: Run automation script
         env:
           # Link these to GitHub Secrets
