@@ -208,37 +208,38 @@ class CalyxReportDownloader:
         driver.execute_script("arguments[0].click();", gen_btn)
         self.logger.info(f"📅 Report generated for date: {report_date}")
     
-        def _export_report(self, driver: webdriver.Chrome, wait: WebDriverWait):
-            """Export report as PDF."""
-            self.logger.info("⏳ Loading Report Viewer...")
-            driver.switch_to.default_content()
-            wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "launch_report_0_page")))
-            
-            export_icon = wait.until(EC.element_to_be_clickable((By.ID, "export")))
-            driver.execute_script("arguments[0].click();", export_icon)
-            
-            self.logger.info("⏳ Switching to Export Dialog...")
-            driver.switch_to.default_content()
-            wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "birtrpt_export_dlg_page")))
-            
-            self.logger.info("📄 Selecting PDF format...")
-            fmt_dropdown = wait.until(EC.presence_of_element_located((By.ID, "fmt")))
-            select = Select(fmt_dropdown)
-            select.select_by_value("pdf")
-            
-            self.logger.info(f"💾 Starting download to: {self.config.download_dir}")
-            
-            # Click OK button - may fail after click because dialog closes, but download starts
-            try:
-                ok_btn = wait.until(EC.element_to_be_clickable((By.ID, "ok")))
-                driver.execute_script("arguments[0].click();", ok_btn)
-            except Exception as e:
-                # This is expected - the dialog closes after clicking OK
-                self.logger.info("✅ Download initiated (dialog closed)")
-            
-            # Wait for download to complete
-            self.logger.info("⏳ Waiting for download to complete...")
-            time.sleep(10)  # Give it time to start
+    def _export_report(self, driver: webdriver.Chrome, wait: WebDriverWait):
+        """Export report as PDF."""
+        self.logger.info("⏳ Loading Report Viewer...")
+        driver.switch_to.default_content()
+        wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "launch_report_0_page")))
+        
+        export_icon = wait.until(EC.element_to_be_clickable((By.ID, "export")))
+        driver.execute_script("arguments[0].click();", export_icon)
+        
+        self.logger.info("⏳ Switching to Export Dialog...")
+        driver.switch_to.default_content()
+        wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "birtrpt_export_dlg_page")))
+        
+        self.logger.info("📄 Selecting PDF format...")
+        fmt_dropdown = wait.until(EC.presence_of_element_located((By.ID, "fmt")))
+        select = Select(fmt_dropdown)
+        select.select_by_value("pdf")
+        
+        self.logger.info(f"💾 Starting download to: {self.config.download_dir}")
+        
+        # ADD THIS: Wait a moment for the dropdown change to process
+        time.sleep(1)
+        
+        # Re-locate the OK button to ensure it's fresh
+        try:
+            ok_btn = wait.until(EC.element_to_be_clickable((By.ID, "ok")))
+            driver.execute_script("arguments[0].click();", ok_btn)
+        except Exception as e:
+            self.logger.info("✅ Download initiated (dialog closed)")
+        
+        self.logger.info("⏳ Waiting for download to complete...")
+        time.sleep(15)  # Increased slightly for headless reliability
         
     def _logout_and_cleanup(self, driver: webdriver.Chrome, wait: WebDriverWait):
         """Logout and cleanup driver."""
@@ -910,7 +911,7 @@ def main():
     success = automation.run_full_pipeline(
         download_report=True,  # Set to False if you already have the PDF
         upload_to_db=True,     # Set to False if you don't want to upload to DB
-        report_date="20/01/2026"  # Use DD/MM/YYYY format
+        #report_date="20/01/2026"  # Use DD/MM/YYYY format
     )
     
     if success:
