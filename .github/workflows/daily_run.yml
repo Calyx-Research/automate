@@ -1,8 +1,8 @@
 name: Financial Data Automation
 on:
   schedule:
-    # 13:30 UTC is 2:30 PM in Nigeria (WAT)
-    - cron: '30 13 * * *'
+    # 13:45 UTC is 2:45 PM in Nigeria (WAT)
+    - cron: '45 13 * * *'
   workflow_dispatch: # Allows you to run it manually for testing
 jobs:
   build:
