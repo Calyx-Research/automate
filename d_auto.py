@@ -10,6 +10,7 @@ import time
 import json
 import logging
 import tempfile
+import urllib.parse
 from datetime import datetime
 from typing import Optional, Dict, List, Any
 import traceback
@@ -674,15 +675,20 @@ class DatabaseManager:
         self.engine = None
     
     def connect(self):
-        """Establish database connection."""
+        """Establish database connection with proper URL encoding."""
         try:
-            connection_uri = (
-                f"mysql+pymysql://{self.config.db_config['user']}:"
-                f"{self.config.db_config['password']}@"
-                f"{self.config.db_config['host']}:"
-                f"{self.config.db_config['port']}/"
-                f"{self.config.db_config['database']}"
-            )
+            # Get database credentials from environment variables or config
+            user = os.getenv('DB_USER') or self.config.db_config['user']
+            password = os.getenv('DB_PASSWORD') or self.config.db_config['password']
+            host = os.getenv('DB_HOST') or self.config.db_config['host']
+            port = os.getenv('DB_PORT', '3306') or self.config.db_config['port']
+            database = os.getenv('DB_NAME') or self.config.db_config['database']
+            
+            # URL-encode the password to handle special characters like '@'
+            safe_password = urllib.parse.quote_plus(password)
+            
+            # Construct the connection URI with encoded password
+            connection_uri = f"mysql+pymysql://{user}:{safe_password}@{host}:{port}/{database}"
             
             self.engine = create_engine(
                 connection_uri,
@@ -911,7 +917,7 @@ def main():
     success = automation.run_full_pipeline(
         download_report=True,  # Set to False if you already have the PDF
         upload_to_db=True,     # Set to False if you don't want to upload to DB
-        #report_date="21/01/2026"  # Use DD/MM/YYYY format
+        #report_date="20/01/2026"  # Use DD/MM/YYYY format
     )
     
     if success:
