@@ -274,7 +274,7 @@ class PDFDataExtractor:
             all_data = []
             report_date_obj = datetime.strptime(report_date, "%d/%m/%Y").date()
             
-            columns = ["S/N", "Symbol", "PClose", "Open", "High", "Low",
+            columns = ["SN", "Symbol", "PClose", "Open", "High", "Low",
                       "Close", "Change", "%_Change", "Deals", "Volume", "Value", "VWAP"]
             
             with pdfplumber.open(pdf_path) as pdf:
