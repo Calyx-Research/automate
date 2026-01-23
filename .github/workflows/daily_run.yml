@@ -2,22 +2,63 @@ name: Financial Data Automation
 on:
   schedule:
     # 13:45 UTC is 2:45 PM in Nigeria (WAT)
-    - cron: '45 13 * * *'
+    # Runs Monday to Friday only (automatically excludes weekends)
+    - cron: '45 13 * * 1-5'
   workflow_dispatch: # Allows you to run it manually for testing
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+      
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
+      
+      - name: Check if today is a Nigerian holiday
+        id: holiday_check
+        run: |
+          python -c "
+          from datetime import datetime
+          import sys
+          
+          # Nigerian public holidays for 2026 (update annually)
+          holidays_2026 = [
+              '2026-01-01',  # New Year's Day
+              '2026-04-03',  # Good Friday
+              '2026-04-06',  # Easter Monday
+              '2026-04-01',  # Eid al-Fitr (estimated)
+              '2026-05-01',  # Workers' Day
+              '2026-05-27',  # Democracy Day
+              '2026-06-08',  # Eid al-Adha (estimated)
+              '2026-06-12',  # June 12 Democracy Day
+              '2026-09-28',  # Maulud Nabi (estimated)
+              '2026-10-01',  # Independence Day
+              '2026-12-25',  # Christmas Day
+              '2026-12-26',  # Boxing Day
+          ]
+          
+          today = datetime.now().strftime('%Y-%m-%d')
+          
+          if today in holidays_2026:
+              print(f'Today ({today}) is a Nigerian public holiday. Skipping workflow.')
+              sys.exit(1)
+          else:
+              print(f'Today ({today}) is a regular business day. Proceeding with workflow.')
+              sys.exit(0)
+          "
+        continue-on-error: true
+      
       - name: Install dependencies
+        if: steps.holiday_check.outcome == 'success'
         run: |
           pip install -r requirements.txt
+      
       - name: Run automation script
+        if: steps.holiday_check.outcome == 'success'
         env:
           # Link these to GitHub Secrets
           CALYX_USERNAME: ${{ secrets.CALYX_USERNAME }}
@@ -28,3 +69,7 @@ jobs:
           DB_PORT: ${{ secrets.DB_PORT }}
           DB_NAME: ${{ secrets.DB_NAME }}
         run: python d_auto.py
+      
+      - name: Holiday Skip Notification
+        if: steps.holiday_check.outcome == 'failure'
+        run: echo "Workflow skipped - Nigerian public holiday detected"
