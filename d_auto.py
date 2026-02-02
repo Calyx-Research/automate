@@ -917,7 +917,7 @@ def main():
     success = automation.run_full_pipeline(
         download_report=True,  # Set to False if you already have the PDF
         upload_to_db=True,     # Set to False if you don't want to upload to DB
-        #report_date="20/01/2026"  # Use DD/MM/YYYY format
+        report_date="30/01/2026"  # Use DD/MM/YYYY format
     )
     
     if success:
