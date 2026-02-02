@@ -282,8 +282,15 @@ class PDFDataExtractor:
                     table = page.extract_table()
                     if table:
                         for row in table:
-                            if row and row[0] and str(row[0]).isdigit():
-                                all_data.append(row)
+                            # Include all rows that have data, not just those starting with digits
+                            # This ensures we don't miss the last row or any valid data rows
+                            if row and row[0] and str(row[0]).strip():
+                                # Additional check: if first column looks like a stock symbol or number, include it
+                                first_col = str(row[0]).strip()
+                                if (first_col.isdigit() or  # Traditional row numbers
+                                    (len(first_col) <= 10 and first_col.isalnum()) or  # Stock symbols
+                                    first_col.replace('.', '').replace('-', '').isdigit()):  # Decimal numbers
+                                    all_data.append(row)
             
             df = pd.DataFrame(all_data, columns=columns)
             df["Date"] = report_date_obj
@@ -917,7 +924,7 @@ def main():
     success = automation.run_full_pipeline(
         download_report=True,  # Set to False if you already have the PDF
         upload_to_db=True,     # Set to False if you don't want to upload to DB
-        report_date="30/01/2026"  # Use DD/MM/YYYY format
+        #report_date="30/01/2026"  # Use DD/MM/YYYY format
     )
     
     if success:
