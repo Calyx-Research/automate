@@ -292,7 +292,23 @@ class PDFDataExtractor:
                                 if row_idx < 3 or row_idx >= len(table) - 3:  # Log first 3 and last 3 rows
                                     self.logger.info(f"Row {row_idx}: First col = '{first_col}', Full row length = {len(row)}")
                                 
-                                # More inclusive criteria for valid data rows
+                                # Check if this is a malformed row where all data is concatenated in first column
+                                # Pattern: starts with a number followed by space and more data
+                                if first_col and ' ' in first_col and first_col.split()[0].isdigit():
+                                    # Check if rest of row is empty/None
+                                    rest_empty = all(cell is None or str(cell).strip() == '' for cell in row[1:])
+                                    if rest_empty:
+                                        # This is a concatenated row - split it
+                                        parts = first_col.split()
+                                        if len(parts) >= 13:  # Should have at least 13 parts
+                                            # Reconstruct the row properly
+                                            reconstructed_row = parts[:13]
+                                            all_data.append(reconstructed_row)
+                                            if row_idx >= len(table) - 3:
+                                                self.logger.info(f"✅ INCLUDED (reconstructed) Row {row_idx}: '{parts[0]}' -> {reconstructed_row[:3]}...")
+                                            continue
+                                
+                                # Normal row processing
                                 if first_col and (
                                     first_col.isdigit() or  # Traditional row numbers
                                     (len(first_col) <= 15 and first_col.replace('.', '').replace('-', '').replace('/', '').isalnum()) or  # Stock symbols with more flexibility
