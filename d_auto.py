@@ -278,19 +278,35 @@ class PDFDataExtractor:
                       "Close", "Change", "%_Change", "Deals", "Volume", "Value", "VWAP"]
             
             with pdfplumber.open(pdf_path) as pdf:
-                for page in pdf.pages:
+                for page_num, page in enumerate(pdf.pages, 1):
+                    self.logger.info(f"📄 Processing page {page_num}")
                     table = page.extract_table()
                     if table:
-                        for row in table:
-                            # Include all rows that have data, not just those starting with digits
-                            # This ensures we don't miss the last row or any valid data rows
-                            if row and row[0] and str(row[0]).strip():
-                                # Additional check: if first column looks like a stock symbol or number, include it
+                        self.logger.info(f"📊 Found table with {len(table)} rows on page {page_num}")
+                        
+                        for row_idx, row in enumerate(table):
+                            if row and row[0]:  # Check if row exists and has first column
                                 first_col = str(row[0]).strip()
-                                if (first_col.isdigit() or  # Traditional row numbers
-                                    (len(first_col) <= 10 and first_col.isalnum()) or  # Stock symbols
-                                    first_col.replace('.', '').replace('-', '').isdigit()):  # Decimal numbers
+                                
+                                # Log what we're examining for debugging
+                                if row_idx < 3 or row_idx >= len(table) - 3:  # Log first 3 and last 3 rows
+                                    self.logger.info(f"Row {row_idx}: First col = '{first_col}', Full row length = {len(row)}")
+                                
+                                # More inclusive criteria for valid data rows
+                                if first_col and (
+                                    first_col.isdigit() or  # Traditional row numbers
+                                    (len(first_col) <= 15 and first_col.replace('.', '').replace('-', '').replace('/', '').isalnum()) or  # Stock symbols with more flexibility
+                                    first_col.replace('.', '').replace('-', '').replace(',', '').isdigit() or  # Numbers with formatting
+                                    (len(first_col) <= 10 and any(c.isalnum() for c in first_col))  # Any alphanumeric content
+                                ):
                                     all_data.append(row)
+                                    if row_idx >= len(table) - 3:  # Log last few rows that are included
+                                        self.logger.info(f"✅ INCLUDED Row {row_idx}: '{first_col}' -> {row[:3]}...")
+                                else:
+                                    if row_idx >= len(table) - 3:  # Log last few rows that are excluded
+                                        self.logger.info(f"❌ EXCLUDED Row {row_idx}: '{first_col}' -> {row[:3]}...")
+            
+            self.logger.info(f"📋 Total rows collected: {len(all_data)}")
             
             df = pd.DataFrame(all_data, columns=columns)
             df["Date"] = report_date_obj
@@ -309,6 +325,12 @@ class PDFDataExtractor:
             df.rename(columns={"%_Change": "change_percent"}, inplace=True)
             
             self.logger.info(f"✅ Extracted {len(df)} records from PDF")
+            
+            # Log first and last few rows for verification
+            if len(df) > 0:
+                self.logger.info(f"🔍 First row: {df.iloc[0]['Symbol'] if 'Symbol' in df.columns else 'N/A'}")
+                self.logger.info(f"🔍 Last row: {df.iloc[-1]['Symbol'] if 'Symbol' in df.columns else 'N/A'}")
+            
             return df
             
         except Exception as e:
@@ -924,7 +946,7 @@ def main():
     success = automation.run_full_pipeline(
         download_report=True,  # Set to False if you already have the PDF
         upload_to_db=True,     # Set to False if you don't want to upload to DB
-        #report_date="30/01/2026"  # Use DD/MM/YYYY format
+        report_date="5/02/2026"  # Use DD/MM/YYYY format
     )
     
     if success:
