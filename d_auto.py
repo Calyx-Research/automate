@@ -278,51 +278,31 @@ class PDFDataExtractor:
                       "Close", "Change", "%_Change", "Deals", "Volume", "Value", "VWAP"]
             
             with pdfplumber.open(pdf_path) as pdf:
-                for page_num, page in enumerate(pdf.pages, 1):
-                    self.logger.info(f"📄 Processing page {page_num}")
+                for page in pdf.pages:
                     table = page.extract_table()
                     if table:
-                        self.logger.info(f"📊 Found table with {len(table)} rows on page {page_num}")
-                        
-                        for row_idx, row in enumerate(table):
-                            if row and row[0]:  # Check if row exists and has first column
+                        for row in table:
+                            if row and row[0]:
                                 first_col = str(row[0]).strip()
                                 
-                                # Log what we're examining for debugging
-                                if row_idx < 3 or row_idx >= len(table) - 3:  # Log first 3 and last 3 rows
-                                    self.logger.info(f"Row {row_idx}: First col = '{first_col}', Full row length = {len(row)}")
-                                
                                 # Check if this is a malformed row where all data is concatenated in first column
-                                # Pattern: starts with a number followed by space and more data
                                 if first_col and ' ' in first_col and first_col.split()[0].isdigit():
-                                    # Check if rest of row is empty/None
                                     rest_empty = all(cell is None or str(cell).strip() == '' for cell in row[1:])
                                     if rest_empty:
                                         # This is a concatenated row - split it
                                         parts = first_col.split()
-                                        if len(parts) >= 13:  # Should have at least 13 parts
-                                            # Reconstruct the row properly
-                                            reconstructed_row = parts[:13]
-                                            all_data.append(reconstructed_row)
-                                            if row_idx >= len(table) - 3:
-                                                self.logger.info(f"✅ INCLUDED (reconstructed) Row {row_idx}: '{parts[0]}' -> {reconstructed_row[:3]}...")
+                                        if len(parts) >= 13:
+                                            all_data.append(parts[:13])
                                             continue
                                 
                                 # Normal row processing
                                 if first_col and (
-                                    first_col.isdigit() or  # Traditional row numbers
-                                    (len(first_col) <= 15 and first_col.replace('.', '').replace('-', '').replace('/', '').isalnum()) or  # Stock symbols with more flexibility
-                                    first_col.replace('.', '').replace('-', '').replace(',', '').isdigit() or  # Numbers with formatting
-                                    (len(first_col) <= 10 and any(c.isalnum() for c in first_col))  # Any alphanumeric content
+                                    first_col.isdigit() or
+                                    (len(first_col) <= 15 and first_col.replace('.', '').replace('-', '').replace('/', '').isalnum()) or
+                                    first_col.replace('.', '').replace('-', '').replace(',', '').isdigit() or
+                                    (len(first_col) <= 10 and any(c.isalnum() for c in first_col))
                                 ):
                                     all_data.append(row)
-                                    if row_idx >= len(table) - 3:  # Log last few rows that are included
-                                        self.logger.info(f"✅ INCLUDED Row {row_idx}: '{first_col}' -> {row[:3]}...")
-                                else:
-                                    if row_idx >= len(table) - 3:  # Log last few rows that are excluded
-                                        self.logger.info(f"❌ EXCLUDED Row {row_idx}: '{first_col}' -> {row[:3]}...")
-            
-            self.logger.info(f"📋 Total rows collected: {len(all_data)}")
             
             df = pd.DataFrame(all_data, columns=columns)
             df["Date"] = report_date_obj
@@ -338,6 +318,14 @@ class PDFDataExtractor:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
             
             # Rename columns for consistency
+            df.rename(columns={"%_Change": "change_percent"}, inplace=True)
+            
+            self.logger.info(f"✅ Extracted {len(df)} records from PDF")
+            return df
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error extracting PDF data: {e}")
+            raise
             df.rename(columns={"%_Change": "change_percent"}, inplace=True)
             
             self.logger.info(f"✅ Extracted {len(df)} records from PDF")
