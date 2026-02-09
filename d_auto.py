@@ -312,9 +312,9 @@ class PDFDataExtractor:
                            "%_Change", "Deals", "Volume", "Value", "VWAP"]
             
             for col in numeric_cols:
-                df[col] = (df[col].astype(str)
-                          .str.replace(',', '', regex=False)
-                          .replace('', np.nan))
+                # Remove commas and convert to numeric
+                df[col] = df[col].astype(str).str.replace(',', '', regex=False)
+                df[col] = df[col].replace('', np.nan)
                 df[col] = pd.to_numeric(df[col], errors='coerce')
             
             # Rename columns for consistency
