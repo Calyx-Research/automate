@@ -818,49 +818,49 @@ class DatabaseManager:
         
         self.logger.info(f"✅ Upload completed: {uploaded} uploaded, {skipped} skipped (duplicates), {errors} errors")
 
-def upload_market_stats(self, df: pd.DataFrame, table_name: str = 'market_stats'):
-    """Upload market stats data to database with duplicate handling."""
-    try:
-        if self.engine is None:
-            self.connect()
-
-        self.logger.info(f"📤 Uploading market stats to {table_name}...")
-
-        # Get existing columns from the table using SQLAlchemy inspector
-        inspector = inspect(self.engine)
-        table_columns = [col['name'] for col in inspector.get_columns(table_name)]
-
-        # Find which columns in df are actually in the table
-        cols_to_use = [col for col in df.columns if col in table_columns]
-        missing_cols = set(table_columns) - set(df.columns)
-        extra_cols = set(df.columns) - set(table_columns)
-
-        if missing_cols:
-            self.logger.warning(f"⚠️ DataFrame missing columns: {missing_cols}")
-        if extra_cols:
-            self.logger.warning(f"⚠️ DataFrame has extra columns (will be ignored): {extra_cols}")
-
-        if not cols_to_use:
-            self.logger.error("❌ No matching columns to upload.")
-            return
-
-        df_filtered = df[cols_to_use]
-
-        # Try to upload filtered data
+    def upload_market_stats(self, df: pd.DataFrame, table_name: str = 'market_stats'):
+        """Upload market stats data to database with duplicate handling."""
         try:
-            df_filtered.to_sql(table_name, con=self.engine, if_exists='append', index=False)
-            self.logger.info("✅ Market stats uploaded successfully!")
+            if self.engine is None:
+                self.connect()
+    
+            self.logger.info(f"📤 Uploading market stats to {table_name}...")
+    
+            # Get existing columns from the table using SQLAlchemy inspector
+            inspector = inspect(self.engine)
+            table_columns = [col['name'] for col in inspector.get_columns(table_name)]
+    
+            # Find which columns in df are actually in the table
+            cols_to_use = [col for col in df.columns if col in table_columns]
+            missing_cols = set(table_columns) - set(df.columns)
+            extra_cols = set(df.columns) - set(table_columns)
+    
+            if missing_cols:
+                self.logger.warning(f"⚠️ DataFrame missing columns: {missing_cols}")
+            if extra_cols:
+                self.logger.warning(f"⚠️ DataFrame has extra columns (will be ignored): {extra_cols}")
+    
+            if not cols_to_use:
+                self.logger.error("❌ No matching columns to upload.")
+                return
+    
+            df_filtered = df[cols_to_use]
+    
+            # Try to upload filtered data
+            try:
+                df_filtered.to_sql(table_name, con=self.engine, if_exists='append', index=False)
+                self.logger.info("✅ Market stats uploaded successfully!")
+            except Exception as e:
+                error_msg = str(e).lower()
+                if 'duplicate' in error_msg or 'integrity' in error_msg or '1062' in str(e):
+                    self.logger.warning("⚠️ Duplicate market stats detected, skipping...")
+                    self.logger.info("ℹ️ Market stats for this date already exists in database")
+                else:
+                    raise
+    
         except Exception as e:
-            error_msg = str(e).lower()
-            if 'duplicate' in error_msg or 'integrity' in error_msg or '1062' in str(e):
-                self.logger.warning("⚠️ Duplicate market stats detected, skipping...")
-                self.logger.info("ℹ️ Market stats for this date already exists in database")
-            else:
-                raise
-
-    except Exception as e:
-        self.logger.error(f"❌ Market stats upload failed: {e}")
-        self.logger.warning("⚠️ Continuing pipeline despite market stats upload error...")
+            self.logger.error(f"❌ Market stats upload failed: {e}")
+            self.logger.warning("⚠️ Continuing pipeline despite market stats upload error...")
 
 class FinancialDataAutomation:
     """Main orchestrator for the financial data automation process."""
