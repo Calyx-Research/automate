@@ -822,30 +822,45 @@ class DatabaseManager:
         try:
             if self.engine is None:
                 self.connect()
-            
+    
             self.logger.info(f"📤 Uploading market stats to {table_name}...")
-            
-            # Try to upload all data first
-            try:
-                df.to_sql(table_name, con=self.engine, if_exists='append', index=False)
-                self.logger.info("✅ Market stats uploaded successfully!")
+    
+            # Get existing columns from the table
+            with self.engine.connect() as conn:
+                result = conn.execute(f"SELECT * FROM {table_name} LIMIT 0")
+                table_columns = list(result.keys())   # column names
+    
+            # Find which columns in df are actually in the table
+            cols_to_use = [col for col in df.columns if col in table_columns]
+            missing_cols = set(table_columns) - set(df.columns)
+            extra_cols = set(df.columns) - set(table_columns)
+    
+            if missing_cols:
+                self.logger.warning(f"⚠️ DataFrame missing columns: {missing_cols}")
+            if extra_cols:
+                self.logger.warning(f"⚠️ DataFrame has extra columns (will be ignored): {extra_cols}")
+    
+            if not cols_to_use:
+                self.logger.error("❌ No matching columns to upload.")
                 return
+    
+            df_filtered = df[cols_to_use]
+    
+            # Try to upload
+            try:
+                df_filtered.to_sql(table_name, con=self.engine, if_exists='append', index=False)
+                self.logger.info("✅ Market stats uploaded successfully!")
             except Exception as e:
                 error_msg = str(e).lower()
-                
-                # Check if it's a duplicate entry error
                 if 'duplicate' in error_msg or 'integrity' in error_msg or '1062' in str(e):
                     self.logger.warning("⚠️ Duplicate market stats detected, skipping...")
                     self.logger.info("ℹ️ Market stats for this date already exists in database")
                 else:
-                    # If it's a different error, raise it
                     raise
-            
+    
         except Exception as e:
             self.logger.error(f"❌ Market stats upload failed: {e}")
-            # Don't raise - log the error but continue the pipeline
             self.logger.warning("⚠️ Continuing pipeline despite market stats upload error...")
-    
 
 class FinancialDataAutomation:
     """Main orchestrator for the financial data automation process."""
