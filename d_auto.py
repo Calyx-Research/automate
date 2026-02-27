@@ -466,13 +466,30 @@ class TradingViewDataFetcher:
         
         return pd.DataFrame(rows)
 
-
 class NGNMarketDataFetcher:
     """Fetches data from NGN Market API."""
     
     def __init__(self, config: Config, logger: logging.Logger):
         self.config = config
         self.logger = logger
+        self.session = requests.Session()
+        # Browser-like headers to avoid being blocked
+        self.session.headers.update({
+            "accept": "*/*",
+            "accept-language": "en-GB,en-US;q=0.9,en;q=0.8",
+            "content-type": "application/json",
+            "referer": "https://www.ngnmarket.com/",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+            "sec-ch-ua": '"Not:A-Brand";v="99", "Google Chrome";v="145", "Chromium";v="145"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Windows"',
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-origin",
+            "cache-control": "no-cache",
+            "pragma": "no-cache",
+            "priority": "u=1, i",
+        })
     
     def fetch_all_companies(self) -> pd.DataFrame:
         """Fetch all companies from NGN Market API."""
@@ -491,24 +508,24 @@ class NGNMarketDataFetcher:
                     "order": "desc"
                 }
                 
-                headers = {
-                    "accept": "*/*",
-                    "content-type": "application/json",
-                    "referer": "https://www.ngnmarket.com/"
-                }
+                try:
+                    response = self.session.get(
+                        self.config.ngnmarket_url,
+                        params=params,
+                        timeout=30
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                except requests.exceptions.RequestException as e:
+                    self.logger.error(f"Request failed on page {page}: {e}")
+                    break
+                except ValueError as e:  # JSON decode error
+                    self.logger.error(f"Invalid JSON on page {page}: {e}")
+                    break
                 
-                response = requests.get(
-                    self.config.ngnmarket_url,
-                    params=params,
-                    headers=headers,
-                    timeout=30
-                )
-                
-                if response.status_code != 200:
-                    raise Exception(f"Request failed on page {page}")
-                
-                data = response.json()
-                companies = data.get("data", data)
+                # Extract companies list – API returns {"success": true, "data": [...]}
+                companies = data.get("data", [])
+                pagination = data.get("pagination", {})
                 
                 self.logger.info(f"Fetched page {page}, records: {len(companies)}")
                 
@@ -517,11 +534,16 @@ class NGNMarketDataFetcher:
                 
                 all_companies.extend(companies)
                 
-                if len(companies) < limit:
+                # Stop if there is no next page according to pagination info
+                if not pagination.get("hasNext"):
                     break
                 
                 page += 1
-                time.sleep(0.3)  # Rate limiting
+                time.sleep(0.5)  # Polite rate limiting
+            
+            if not all_companies:
+                self.logger.warning("No companies fetched. Check network or API availability.")
+                return pd.DataFrame()
             
             df = self._process_ngn_data(all_companies)
             self.logger.info(f"✅ Fetched {len(df)} NGN Market records")
@@ -532,34 +554,45 @@ class NGNMarketDataFetcher:
             raise
     
     def _process_ngn_data(self, companies: List[Dict]) -> pd.DataFrame:
-        """Process NGN Market company data."""
+        """Process NGN Market company data into a clean DataFrame."""
         df = pd.DataFrame(companies)
         
-        if "id" not in df.columns:
-            raise ValueError("`id` column not found in company data")
+        if df.empty:
+            self.logger.warning("Empty companies list received.")
+            return df
         
+        # Ensure 'id' column exists
+        if "id" not in df.columns:
+            raise ValueError("`id` column not found in company data. Available columns: " + ", ".join(df.columns))
+        
+        # Set id as index and sort
         df.set_index("id", inplace=True)
         df.sort_index(inplace=True)
         
-        # Convert numeric columns
-        numeric_cols = ["sharesOutstanding", "price", "prevClose", "dayHigh", "dayLow",
-                       "volume", "marketCap", "priceChange", "priceChangePercent",
-                       "change7dPercent", "change52wPercent", "high52wk", "low52wk"]
+        # Numeric columns to convert (as per API schema)
+        numeric_cols = [
+            "sharesOutstanding", "price", "prevClose", "dayHigh", "dayLow",
+            "volume", "marketCap", "priceChange", "priceChangePercent",
+            "change7dPercent", "change52wPercent", "high52wk", "low52wk"
+        ]
         
         for col in numeric_cols:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
         
-        # Convert datetime
+        # Convert datetime column
         if "lastUpdated" in df.columns:
             df["lastUpdated"] = pd.to_datetime(df["lastUpdated"], errors="coerce")
         
-        # Rename columns for consistency
-        df.rename(columns={
+        # Rename columns for consistency with other data sources
+        rename_map = {
             "symbol": "Symbol",
             "marketCap": "Market cap",
             "sector": "Sector"
-        }, inplace=True)
+        }
+        # Only rename columns that exist
+        rename_map = {k: v for k, v in rename_map.items() if k in df.columns}
+        df.rename(columns=rename_map, inplace=True)
         
         return df
 
