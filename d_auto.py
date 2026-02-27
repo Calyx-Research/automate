@@ -605,31 +605,54 @@ class MarketStatsDataFetcher:
         self.config = config
         self.logger = logger
         self.market_stats_url = "https://www.ngnmarket.com/api/market/snapshot"
+        # Use the same headers as in the browser fetch example
+        self.headers = {
+            "accept": "*/*",
+            "accept-language": "en-GB,en-US;q=0.9,en;q=0.8",
+            "cache-control": "no-cache",
+            "content-type": "application/json",
+            "pragma": "no-cache",
+            "priority": "u=1, i",
+            "sec-ch-ua": '"Not:A-Brand";v="99", "Google Chrome";v="145", "Chromium";v="145"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Windows"',
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-origin",
+            "referer": "https://www.ngnmarket.com/",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
+        }
     
     def fetch_market_stats(self) -> pd.DataFrame:
         """Fetch market snapshot statistics."""
         try:
             self.logger.info("📊 Fetching market stats data...")
             
-            headers = {
-                "accept": "application/json",
-                "user-agent": "Mozilla/5.0"
-            }
-            
-            response = requests.get(self.market_stats_url, headers=headers, timeout=30)
+            response = requests.get(self.market_stats_url, headers=self.headers, timeout=30)
             response.raise_for_status()
             payload = response.json()
             
-            # Safety check
+            # Check success flag
             if not payload.get("success"):
                 raise ValueError("API returned success = false")
             
-            data = payload["data"]
+            # The data is now nested: payload["data"] contains timestamp, signature, and payload
+            outer_data = payload["data"]  # this has keys: timestamp, signature, payload
             
-            # Flatten marketCap nested object
-            market_cap = data.pop("marketCap", {})
+            # Log the structure for debugging (optional)
+            self.logger.debug(f"Outer data keys: {list(outer_data.keys())}")
+            
+            # Extract the inner payload that actually contains the market stats
+            if "payload" in outer_data:
+                inner_data = outer_data["payload"]
+            else:
+                # Fallback for old structure (if API reverts)
+                inner_data = outer_data
+            
+            # Flatten marketCap if present
+            market_cap = inner_data.pop("marketCap", {})
             flat_data = {
-                **data,
+                **inner_data,
                 "marketCap_equity": market_cap.get("equity"),
                 "marketCap_bonds": market_cap.get("bonds"),
                 "marketCap_etfs": market_cap.get("etfs"),
@@ -642,7 +665,6 @@ class MarketStatsDataFetcher:
             # Convert numeric columns
             numeric_cols = ["asi", "asiChangePercent", "deals", "volume", "valueTraded",
                            "marketCap_equity", "marketCap_bonds", "marketCap_etfs", "marketCap_total"]
-            
             for col in numeric_cols:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -653,13 +675,12 @@ class MarketStatsDataFetcher:
                 if col in df.columns:
                     df[col] = pd.to_datetime(df[col], errors="coerce")
             
-            self.logger.info(f"✅ Fetched market stats successfully")
+            self.logger.info(f"✅ Fetched market stats successfully. Columns: {list(df.columns)}")
             return df
             
         except Exception as e:
             self.logger.error(f"❌ Error fetching market stats: {e}")
             raise
-
 
 class DataProcessor:
     """Processes and merges data from different sources."""
