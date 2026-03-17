@@ -344,56 +344,79 @@ class PDFDataExtractor:
 
 
 class TradingViewDataFetcher:
-    """Fetches data from TradingView API."""
+    """Fetches data from TradingView API using a persistent session and browser‑like headers."""
     
-    def __init__(self, config: Config, logger: logging.Logger):
+    def __init__(self, config, logger: logging.Logger):
         self.config = config
         self.logger = logger
-    
+        self.session = requests.Session()
+        self._setup_session()
+
+    def _setup_session(self):
+        """Configure the session with headers mimicking a real browser."""
+        self.session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.tradingview.com/",
+            "Origin": "https://www.tradingview.com",
+            "Connection": "keep-alive",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-site",
+            "Pragma": "no-cache",
+            "Cache-Control": "no-cache",
+            "TE": "trailers",
+        })
+
     def fetch_data(self) -> pd.DataFrame:
-        """Fetch TradingView data."""
+        """Fetch TradingView data using a session that first visits the main page."""
         try:
             self.logger.info("📡 Fetching TradingView data...")
-            
+
+            # 1. Visit main page to obtain any required cookies
+            main_url = "https://www.tradingview.com/"
+            try:
+                self.session.get(main_url, timeout=10)
+                self.logger.debug("Main page loaded, cookies obtained.")
+            except Exception as e:
+                self.logger.warning(f"Could not load main page, but continuing. Error: {e}")
+
+            # 2. Build API request
             url = self.config.tradingview_url
             params = ("?id=stocks_market_movers.all_stocks"
-                     "&version=47"
-                     "&columnset_id=overview"
-                     "&market=nigeria")
-            
+                      "&version=47"
+                      "&columnset_id=overview"
+                      "&market=nigeria")
+
             columns = ["close", "change", "volume", "relative_volume_10d_calc",
-                      "market_cap_basic", "price_earnings_ttm", "earnings_per_share_diluted_ttm",
-                      "earnings_per_share_diluted_growth_ttm_yoy", "dividends_yield_current", "sector"]
-            
+                       "market_cap_basic", "price_earnings_ttm", "earnings_per_share_diluted_ttm",
+                       "earnings_per_share_diluted_growth_ttm_yoy", "dividends_yield_current", "sector"]
+
             payload = {
                 "lang": "en",
                 "columns": columns,
-                "range": [0, 200]
+                "range": [0, 200]  # adjust if needed
             }
-            
-            headers = {
-                "content-type": "text/plain;charset=UTF-8",
-                "accept": "application/json, text/plain, */*",
-                "referer": "https://www.tradingview.com/"
-            }
-            
-            response = requests.post(url + params, json=payload, headers=headers, timeout=30)
+
+            # 3. Make POST request using the same session
+            response = self.session.post(url + params, json=payload, timeout=30)
             response.raise_for_status()
             data = response.json()
-            
+
             df = self._parse_tradingview_data(data)
             self.logger.info(f"✅ Fetched {len(df)} TradingView records")
             return df
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error fetching TradingView data: {e}")
             raise
-    
+
     def _parse_tradingview_data(self, data: Dict) -> pd.DataFrame:
-        """Parse TradingView API response."""
+        """Parse TradingView API response (unchanged from original)."""
         rows = []
         data_by_id = {item.get("id"): item.get("rawValues", []) for item in data.get("data", [])}
-        
+
         expected_keys = {
             "TickerUniversal": "TickerUniversal",
             "Price": "Price",
@@ -407,19 +430,20 @@ class TradingViewDataFetcher:
             "DividendsYield": "DividendsYield",
             "Sector": "Sector",
         }
-        
+
         ticker_data = data_by_id.get(expected_keys["TickerUniversal"])
-        
+
         if ticker_data:
             # Extract data arrays
             data_arrays = {key: data_by_id.get(expected_keys[key], [])
                           for key in expected_keys.keys()}
-            
+
+            # Determine max length (some arrays may be shorter, but we align by index)
             n = max(len(arr) for arr in data_arrays.values() if arr)
-            
+
             def safe_get(lst, idx):
                 return lst[idx] if idx < len(lst) else None
-            
+
             for i in range(n):
                 tinfo = safe_get(ticker_data, i)
                 if isinstance(tinfo, dict):
@@ -428,7 +452,7 @@ class TradingViewDataFetcher:
                 else:
                     symbol = str(tinfo) if tinfo is not None else ""
                     description = ""
-                
+
                 rows.append({
                     "Symbol": symbol,
                     "Description": description,
@@ -447,10 +471,10 @@ class TradingViewDataFetcher:
             # Fallback parsing
             for item in data.get("data", []):
                 values = item.get("rawValues", []) or []
-                
+
                 def v(i):
                     return values[i] if i < len(values) else None
-                
+
                 rows.append({
                     "Symbol": item.get("id"),
                     "Price": v(0),
@@ -464,7 +488,7 @@ class TradingViewDataFetcher:
                     "Div yield % TTM": v(8),
                     "Sector": v(9),
                 })
-        
+
         return pd.DataFrame(rows)
 
 class NGNMarketDataFetcher:
