@@ -3,7 +3,7 @@ on:
   schedule:
     # 2:30 PM in Nigeria (WAT) = 13:30 UTC
     # Runs Monday to Friday only
-    - cron: '30 03 * * 1-5'
+    - cron: '50 13 * * 1-5'
   workflow_dispatch:
 
 jobs:
